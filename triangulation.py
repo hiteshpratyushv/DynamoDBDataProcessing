@@ -4,17 +4,6 @@ from decimal import *
 from operator import itemgetter
 import numpy as np
 
-convertionFactor = 1/4;
-
-devices = list();
-devices.append('ESP32_1')
-devices.append('ESP32_2')
-devices.append('ESP32_3')
-
-ESP32_1 = (100,200)
-ESP32_2 = (30,20)
-ESP32_3 = (200,50)
-
 def getRecords(table,userid):
 	items = table.scan(Select= 'ALL_ATTRIBUTES',FilterExpression=Attr('userid').eq(userid))
 	return items['Items']
@@ -57,8 +46,10 @@ def calculateCoordinates(records):
 	values = list();
 	if len(records)==3:
 		for record in records:
-			values.append(eval(record['device']))
-			values.append(float(record['distance'])/convertionFactor)
+			for device in devices:
+				if device['device'] == record['device']:
+					values.append((int(device['x']),int(device['y'])))
+					values.append(float(record['distance'])/convertionFactor)
 		
 		ans = solve2V2D3E(values)
 		return ans
@@ -83,11 +74,18 @@ def updateUserLocation(table,userid,x,y):
                 })
 	print('Update Done')
 
+convertionFactor = 1/20;
+
 userids = list()
+devices = list()
 useridWithTime = dict()
 dynamodb = boto3.resource('dynamodb','ap-southeast-2')
 user_location = dynamodb.Table('user_location')
 location_logs = dynamodb.Table('location_logs')
+device_list = dynamodb.Table('device_list')
+
+for device in getAllRecords(device_list):
+	devices.append(device)
 
 for item in getAllRecords(user_location):
 	userid = item['userid']
@@ -100,11 +98,10 @@ while True:
 	for userid in userids:
 		calculationrecords = list()
 		for device in devices:
-			records = getRecordsWTD(location_logs,userid,useridWithTime[userid],device)
+			records = getRecordsWTD(location_logs,userid,useridWithTime[userid],device['device'])
 			records = sorted(records, key=itemgetter('timestamp'))
 			if len(records) != 0: 
 				calculationrecords.append(records[0])
-		print(calculationrecords)
 		(x,y) = calculateCoordinates(calculationrecords)
 		if x!=0 and y!=0:
 			max=maxTS(calculationrecords)
